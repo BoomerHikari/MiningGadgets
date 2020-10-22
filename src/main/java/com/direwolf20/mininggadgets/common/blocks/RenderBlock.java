@@ -6,12 +6,20 @@ import net.minecraft.block.BlockRenderType;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.material.Material;
 import net.minecraft.block.material.PushReaction;
+import net.minecraft.enchantment.EnchantmentHelper;
+import net.minecraft.enchantment.Enchantments;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.item.ItemStack;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.Direction;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.IBlockReader;
+import net.minecraft.world.World;
+import net.minecraft.world.server.ServerWorld;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
+
+import java.util.List;
 
 import javax.annotation.Nullable;
 
@@ -74,5 +82,33 @@ public class RenderBlock extends Block {
     @Override
     public boolean isSideInvisible(BlockState p_200122_1_, BlockState p_200122_2_, Direction p_200122_3_) {
         return true;
+    }
+
+    @Override
+    public void onBlockHarvested(World worldIn, BlockPos pos, BlockState state, PlayerEntity player) {
+    	// Don't need to handle this on the client.
+    	if (!worldIn.isRemote()) {
+    		TileEntity tileAtPos = worldIn.getTileEntity(pos);
+    		// Only handle harvesting if there is a RenderBlockTileEntity at this location, and only if its durability is greater than 0.
+    		if (null != tileAtPos
+    				&& tileAtPos instanceof RenderBlockTileEntity
+    				&& ((RenderBlockTileEntity) tileAtPos).getDurability() > 0) {
+    			BlockState renderBlock = ((RenderBlockTileEntity) tileAtPos).getRenderBlock();
+    			// Check that the blockstate exists, then make sure the player is currently capable of harvesting that kind of block.
+    			if (null != renderBlock && renderBlock.canHarvestBlock(worldIn, pos, player)) {
+    				// Determine what items the rendered block would have dropped if broken with the player's active item, and drop those items.
+    				List<ItemStack> dropList = Block.getDrops(renderBlock, (ServerWorld) worldIn, pos, tileAtPos, player, player.getHeldItemMainhand());
+    				for (ItemStack drop : dropList) {
+        				Block.spawnAsEntity(worldIn, pos, drop);
+    				}
+    				// Calculate experience based on player's mainhand item, and drop that amount.
+    				int experienceDrop = renderBlock.getExpDrop(worldIn, pos, EnchantmentHelper.getEnchantmentLevel(Enchantments.FORTUNE, player.getHeldItemMainhand()),
+    						EnchantmentHelper.getEnchantmentLevel(Enchantments.SILK_TOUCH, player.getHeldItemMainhand()));
+    				renderBlock.getBlock().dropXpOnBlockBreak((ServerWorld) worldIn, pos, experienceDrop);
+    				// Handle aditional drops, such as silverfish.
+    				renderBlock.spawnAdditionalDrops((ServerWorld) worldIn, pos, player.getHeldItemMainhand());
+    			}
+    		}
+    	}
     }
 }
